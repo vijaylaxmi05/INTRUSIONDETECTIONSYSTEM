@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>NIDS Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #0d1117; color: #c9d1d9; }
+    header {
+      background: #161b22; padding: 16px 24px;
+      border-bottom: 1px solid #30363d;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    header h1 { font-size: 1.25rem; color: #58a6ff; }
+    .badge {
+      background: #21262d; border: 1px solid #30363d;
+      border-radius: 20px; padding: 4px 14px; font-size: 0.8rem;
+    }
+    .badge span { color: #3fb950; font-weight: 600; }
+    main { padding: 24px; }
+    .stats {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 16px; margin-bottom: 24px;
+    }
+    .stat-card {
+      background: #161b22; border: 1px solid #30363d;
+      border-radius: 8px; padding: 16px; text-align: center;
+    }
+    .stat-card .num { font-size: 2rem; font-weight: 700; color: #58a6ff; }
+    .stat-card .label { font-size: 0.8rem; color: #8b949e; margin-top: 4px; }
+    .toolbar {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
+    }
+    .toolbar button {
+      background: #21262d; border: 1px solid #30363d; color: #c9d1d9;
+      padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 0.85rem;
+    }
+    .toolbar button:hover { background: #30363d; }
+    .toolbar button.danger  { border-color: #f85149; color: #f85149; }
+    .toolbar button.stop    { border-color: #f85149; color: #f85149; }
+    .toolbar button.resume  { border-color: #3fb950; color: #3fb950; }
+    .toolbar button:disabled { opacity: 0.4; cursor: not-allowed; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    thead th {
+      background: #161b22; border-bottom: 1px solid #30363d;
+      padding: 10px 12px; text-align: left; color: #8b949e;
+    }
+    tbody tr:nth-child(even) { background: #161b22; }
+    tbody tr:hover { background: #1c2128; }
+    td { padding: 9px 12px; border-bottom: 1px solid #21262d; }
+    .pill {
+      display: inline-block; border-radius: 12px;
+      padding: 2px 10px; font-size: 0.78rem; font-weight: 600;
+    }
+    .pill-syn   { background:#3d1212; color:#f85149; }
+    .pill-port  { background:#12203d; color:#58a6ff; }
+    .pill-icmp  { background:#12283d; color:#79c0ff; }
+    .pill-null  { background:#1e2d17; color:#3fb950; }
+    .pill-xmas  { background:#2d2417; color:#e3b341; }
+    .pill-other { background:#21262d; color:#8b949e; }
+    #status { font-size: 0.78rem; color: #8b949e; }
+    .empty-row td { text-align:center; color:#8b949e; padding: 24px; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>🛡 NIDS — Intrusion Detection Dashboard</h1>
+  <div class="badge">Auto-refresh <span id="countdown">5</span>s</div>
+</header>
+<main>
+  <div class="stats">
+    <div class="stat-card"><div class="num" id="total">0</div><div class="label">Total Alerts</div></div>
+    <div class="stat-card"><div class="num" id="syn">0</div><div class="label">SYN Flood</div></div>
+    <div class="stat-card"><div class="num" id="portscan">0</div><div class="label">Port Scan</div></div>
+    <div class="stat-card"><div class="num" id="icmp">0</div><div class="label">ICMP Flood</div></div>
+    <div class="stat-card"><div class="num" id="other">0</div><div class="label">Other</div></div>
+  </div>
+
+  <div class="toolbar">
+    <button onclick="fetchAlerts()">↻ Refresh</button>
+    <button class="danger" onclick="clearAlerts()">🗑 Clear</button>
+    <button id="toggleBtn" class="stop" onclick="toggleSniffer()">⏹ Stop</button>
+    <span id="status">Last update: —</span>
+  </div>
+
+  <table id="alert-table">
+    <thead>
+      <tr>
+        <th>#</th><th>Timestamp (UTC)</th><th>Type</th>
+        <th>Source IP</th><th>Destination IP</th><th>Detail</th>
+      </tr>
+    </thead>
+    <tbody id="alert-body">
+      <tr class="empty-row"><td colspan="6">No alerts yet.</td></tr>
+    </tbody>
+  </table>
+</main>
+
+<script>
+  const pillClass = t => {
+    if (t.includes('SYN'))  return 'pill-syn';
+    if (t.includes('Port')) return 'pill-port';
+    if (t.includes('ICMP')) return 'pill-icmp';
+    if (t.includes('Null')) return 'pill-null';
+    if (t.includes('Xmas')) return 'pill-xmas';
+    return 'pill-other';
+  };
+
+  async function fetchAlerts() {
+    const res = await fetch('/api/alerts');
+    const data = await res.json();
+    document.getElementById('status').textContent = 'Last update: ' + new Date().toLocaleTimeString();
+
+    // stats
+    document.getElementById('total').textContent = data.length;
+    document.getElementById('syn').textContent    = data.filter(a => a.type.includes('SYN')).length;
+    document.getElementById('portscan').textContent = data.filter(a => a.type.includes('Port')).length;
+    document.getElementById('icmp').textContent   = data.filter(a => a.type.includes('ICMP')).length;
+    document.getElementById('other').textContent  = data.filter(a =>
+      !a.type.includes('SYN') && !a.type.includes('Port') && !a.type.includes('ICMP')).length;
+
+    const tbody = document.getElementById('alert-body');
+    if (data.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No alerts yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = [...data].reverse().map((a, i) => `
+      <tr>
+        <td>${data.length - i}</td>
+        <td>${a.timestamp}</td>
+        <td><span class="pill ${pillClass(a.type)}">${a.type}</span></td>
+        <td>${a.src_ip}</td>
+        <td>${a.dst_ip}</td>
+        <td>${a.detail}</td>
+      </tr>`).join('');
+  }
+
+  async function clearAlerts() {
+    await fetch('/api/alerts/clear', { method: 'POST' });
+    fetchAlerts();
+  }
+
+  // ── Stop / Resume ──────────────────────────────────────────────────────────
+  let snifferRunning = true;
+
+  async function syncSnifferState() {
+    const res = await fetch('/api/status');
+    const data = await res.json();
+    snifferRunning = data.running;
+    updateToggleBtn();
+  }
+
+  function updateToggleBtn() {
+    const btn = document.getElementById('toggleBtn');
+    if (snifferRunning) {
+      btn.textContent = '⏹ Stop';
+      btn.className = 'stop';
+      document.getElementById('countdown').parentElement.style.opacity = '1';
+    } else {
+      btn.textContent = '▶ Resume';
+      btn.className = 'resume';
+      document.getElementById('countdown').parentElement.style.opacity = '0.4';
+    }
+  }
+
+  async function toggleSniffer() {
+    const btn = document.getElementById('toggleBtn');
+    btn.disabled = true;
+    const endpoint = snifferRunning ? '/api/stop' : '/api/resume';
+    await fetch(endpoint, { method: 'POST' });
+    snifferRunning = !snifferRunning;
+    updateToggleBtn();
+    btn.disabled = false;
+  }
+
+  // auto-refresh every 5 s (only when running)
+  let tick = 5;
+  setInterval(() => {
+    tick--;
+    document.getElementById('countdown').textContent = tick;
+    if (tick <= 0) {
+      tick = 5;
+      if (snifferRunning) fetchAlerts();
+    }
+  }, 1000);
+
+  syncSnifferState();
+  fetchAlerts();
+</script>
+</body>
+</html>

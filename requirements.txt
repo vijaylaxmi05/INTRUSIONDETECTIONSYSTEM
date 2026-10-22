@@ -1,0 +1,13 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# VIJAY LAXMI SUNIA — Network Intrusion Detection System
+# IBM SkillsBuild Cyber Security 2026 | BharatCares
+# ──────────────────────────────────────────────────────────────────────────────
+# Install with:  pip install -r requirements.txt
+# Python        : 3.9 or later
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Packet capture and protocol dissection (live mode)
+scapy==2.5.0
+
+# Web dashboard and REST API
+Flask==3.0.3
